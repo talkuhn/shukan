@@ -71,10 +71,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bo
 .tquote { position: absolute; top: 16px; inset-inline: 22px; text-align: center; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
 html.fq .tquote { opacity: 1; }
 .tquote p { margin: 0; font-family: "Zen Kurenaido", "Brush Script MT", cursive; font-size: 21px; line-height: 1.4; font-weight: 400; color: #2E2A24; text-wrap: balance; }
+.tquote cite { display: block; margin-block-start: 6px; font-family: "Zen Kurenaido", "Brush Script MT", cursive; font-style: normal; font-weight: 400; font-size: 15px; color: var(--muted); }
 .ttools { position: absolute; bottom: 12px; inset-inline: 0; text-align: center; font-size: 13px; color: var(--muted); }
 .ttools button { font: inherit; color: inherit; background: none; border: 0; padding: 8px 12px; opacity: .75; -webkit-tap-highlight-color: transparent; }
 .ttools button:active { opacity: 1; }
-.tquote cite { display: block; margin-block-start: 6px; font-family: "Zen Kurenaido", "Brush Script MT", cursive; font-style: normal; font-weight: 400; font-size: 15px; color: var(--muted); }
 .nb { width: 30px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); flex: none; }
 .nb:hover:not(:disabled) { color: var(--fg); }
 .nb:disabled { opacity: 0.25; cursor: default; }
@@ -238,7 +238,7 @@ body { overflow-x: clip; }
   var actx = null, goalFresh = null;   // goalFresh: the habit whose weekly goal has just been reached
   var offset = 0;            // weeks back from the current week
   var VIEWS = ['week', 'month', 'tree'];   // right to left, as the tabs are laid out
-  var sceneH = 0, measuring = false;   // height of the landscape: whatever the month page leaves free; the week page uses the same, so the picture is identical and does not shift
+  var sceneH = 0, measuring = false, sceneStale = false;   // height of the landscape: whatever the month page leaves free; the week page uses the same, so the picture is identical and does not shift
   var view = 'week', monthOffset = 0;   // monthOffset: months back from this month
   var dbRef = null;
   var timer = null, saving = false, dirty = false, retry = null, failed = false;
@@ -249,6 +249,12 @@ body { overflow-x: clip; }
   function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
   function weekStart(d) { return addDays(d, -d.getDay()); }
   function isDone(h, k) { var a = state.days[k]; return !!a && a.indexOf(h) !== -1; }
+  /* a week that began before tracking did can only offer the days from the start, so a goal never exceeds them */
+  function goalFor(hb, ws) {
+    var avail = 0;
+    for (var i = 0; i < 7; i++) if (addDays(ws, i).getTime() >= START.getTime()) avail++;
+    return Math.max(1, Math.min(hb.goal, avail));
+  }
   function weekCount(h, ws) { var c = 0; for (var i = 0; i < 7; i++) if (isDone(h, key(addDays(ws, i)))) c++; return c; }
 
   function rangeText(ws) {
@@ -339,7 +345,7 @@ body { overflow-x: clip; }
   function weekSeq(ws) {
     var seq = [];
     HABITS.forEach(function (hb) {
-      var n = Math.min(weekCount(hb.id, ws), hb.goal);
+      var n = Math.min(weekCount(hb.id, ws), goalFor(hb, ws));
       for (var i = 0; i < n; i++) seq.push(hb.id);
     });
     return seq;
@@ -435,7 +441,7 @@ body { overflow-x: clip; }
     }
     return g + '<circle r="2.1" class="core"/></g></g>';
   }
-  /* Zen sayings from the traditional sources, one per day, in my own Hebrew rendering */
+  /* Zen sayings from the traditional sources, one per day */
   var ZEN = [
     ['Have you eaten your rice porridge? Then wash your bowl.', 'Jōshū'],
     ['A day without work is a day without food.', 'Hyakujō'],
@@ -547,12 +553,12 @@ body { overflow-x: clip; }
     var html = '';
     HABITS.forEach(function (hb) {
       var cnt = weekCount(hb.id, ws);
-      var met = cnt >= hb.goal;
+      var goal = goalFor(hb, ws), met = cnt >= goal;
       html += '<section class="habit h-' + hb.id + (met ? ' met' : '') + '"><header class="hh">' +
         '<div class="nm"><h2>' + hb.name + '</h2><p>' + hb.goalText + '</p></div>' +
         '<div class="stat">' + (met
           ? '<span class="chk' + (goalFresh === hb.id ? ' fresh' : '') + '" role="img" aria-label="היעד הושג"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg></span>'
-          : '<span class="cnt">' + cnt + '<span class="of">/' + hb.goal + '</span></span>') +
+          : '<span class="cnt">' + cnt + '<span class="of">/' + goal + '</span></span>') +
         '</div></header><div class="grid">';
       for (var j = 0; j < 7; j++) {
         var d = addDays(ws, j), k = key(d);
@@ -584,7 +590,7 @@ body { overflow-x: clip; }
     var t = 0, m = 0;
     for (var d = 1; d <= dim; d++) {
       var dt = new Date(first.getFullYear(), first.getMonth(), d);
-      if (dt.getDay() === 0 && dt.getTime() <= today.getTime()) { t++; if (weekCount(hb.id, dt) >= hb.goal) m++; }
+      if (dt.getDay() === 0 && dt.getTime() <= today.getTime()) { t++; if (weekCount(hb.id, dt) >= goalFor(hb, dt)) m++; }
     }
     return { t: t, m: m };
   }
@@ -715,7 +721,7 @@ body { overflow-x: clip; }
     var set = (state.days[k] || []).slice();
     var at = set.indexOf(h);
     var adding = at === -1;
-    var p = k.split('-'), ws = weekStart(new Date(+p[0], +p[1] - 1, +p[2])), goal = HABITS.filter(function (x) { return x.id === h; })[0].goal;
+    var p = k.split('-'), ws = weekStart(new Date(+p[0], +p[1] - 1, +p[2])), goal = goalFor(HABITS.filter(function (x) { return x.id === h; })[0], ws);
     var before = weekCount(h, ws);
     if (adding) set.push(h); else set.splice(at, 1);
     if (set.length) state.days[k] = set; else delete state.days[k];
@@ -740,12 +746,25 @@ body { overflow-x: clip; }
     try { navigator.clipboard.writeText(json).then(function () { flash(btn, 'הועתק ✓'); }, function () { flash(btn, 'ההעתקה נכשלה'); }); }
     catch (e) { flash(btn, 'ההעתקה נכשלה'); }
   }
+  /* only well-formed days and known habits come in from a pasted backup */
+  function clean(days, dt) {
+    var out = { days: {}, dt: {} }, ids = HABITS.map(function (x) { return x.id; });
+    Object.keys(days).forEach(function (k) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !Array.isArray(days[k])) return;
+      var set = days[k].filter(function (h, i, a) { return ids.indexOf(h) !== -1 && a.indexOf(h) === i; });
+      if (set.length) out.days[k] = set;
+      var t = dt && typeof dt === 'object' ? Number(dt[k]) : 0;
+      if (t > 0) out.dt[k] = t;
+    });
+    return out;
+  }
   function restoreData(btn) {
     function apply(txt) {
       try {
         var d = JSON.parse(txt);
         if (!d || typeof d.days !== 'object' || d.days === null) throw 0;
-        var m = merge({ days: state.days, dt: state.dt }, { days: d.days, dt: d.dt && typeof d.dt === 'object' ? d.dt : {} });
+        var inc = clean(d.days, d.dt);
+        var m = merge({ days: state.days, dt: state.dt }, inc);
         state.days = m.days; state.dt = m.dt; state.t = Math.max(state.t, Number(d.t) || 0);
         cacheLocal(); render();
         var nb = document.querySelector('button[data-bk="import"]'); if (nb) flash(nb, 'שוחזר ✓');
@@ -776,7 +795,7 @@ body { overflow-x: clip; }
       monthOffset = Math.min(0, (ws.getFullYear() - now.getFullYear()) * 12 + ws.getMonth() - now.getMonth());
     }
     view = v;
-    render();
+    if (sceneStale && v !== 'tree') { sceneStale = false; measureScene(); } else render();
   }
   /* page change: a short fade, no movement. Between week and month only the content fades; the weekday row and the landscape are the same in both, so they stay put. */
   var pages = document.getElementById('pages'), busy = false;
@@ -843,6 +862,7 @@ body { overflow-x: clip; }
   /* the month page is the taller one: draw it once, unseen, to see how much room it leaves for the landscape */
   function measureScene() {
     if (measuring) return;
+    if (view === 'tree') { sceneStale = true; return; }
     measuring = true;
     var keep = view;
     sceneH = 0; view = 'month'; render();
@@ -850,7 +870,22 @@ body { overflow-x: clip; }
     view = keep; render();
     measuring = false;
   }
-  window.addEventListener('resize', measureScene);
+  /* a page that stayed open overnight (the home-screen app is only suspended) must move on to the new day */
+  var shownDay = key(new Date());
+  function newDay() {
+    if (document.hidden || key(new Date()) === shownDay) return;
+    shownDay = key(new Date()); offset = 0; monthOffset = 0; render();
+  }
+  document.addEventListener('visibilitychange', newDay);
+  window.addEventListener('pageshow', newDay);
+  window.addEventListener('focus', newDay);
+  /* (c) resize: measure once things settle, and never while the tree is shown (measuring redraws the page) */
+  var resizeT = null, lastW = innerWidth, lastH = innerHeight;
+  window.addEventListener('resize', function () {
+    if (innerWidth === lastW && innerHeight === lastH) return;
+    lastW = innerWidth; lastH = innerHeight;
+    clearTimeout(resizeT); resizeT = setTimeout(measureScene, 150);
+  });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(measureScene);
   document.getElementById('prev').addEventListener('click', function () { if (view === 'month') monthOffset--; else offset--; render(); });
   document.getElementById('next').addEventListener('click', function () {

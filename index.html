@@ -730,26 +730,33 @@ body { overflow-x: clip; }
   }
 
   /* backup: copy all marks as text, and restore (merge) from pasted text */
-  function backupData() {
-    var json = JSON.stringify({ shukan: 1, days: state.days, dt: state.dt, t: state.t });
-    var done = function () { alert('הגיבוי הועתק. הדבק אותו במקום בטוח, למשל בהערות.'); };
-    try { navigator.clipboard.writeText(json).then(done, function () { prompt('העתק את הטקסט:', json); }); }
-    catch (err) { prompt('העתק את הטקסט:', json); }
+  function flash(btn, msg) {
+    var old = btn.getAttribute('data-l') || btn.textContent; btn.setAttribute('data-l', old);
+    btn.textContent = msg; clearTimeout(btn._t);
+    btn._t = setTimeout(function () { btn.textContent = old; }, 1800);
   }
-  function restoreData() {
-    var txt = prompt('הדבק כאן את הגיבוי:');
-    if (!txt) return;
-    try {
-      var d = JSON.parse(txt);
-      if (!d || typeof d.days !== 'object' || d.days === null) throw 0;
-      var m = merge({ days: state.days, dt: state.dt }, { days: d.days, dt: d.dt && typeof d.dt === 'object' ? d.dt : {} });
-      state.days = m.days; state.dt = m.dt; state.t = Math.max(state.t, Number(d.t) || 0);
-      cacheLocal(); render(); alert('הגיבוי שוחזר.');
-    } catch (err) { alert('הטקסט אינו גיבוי תקין.'); }
+  function backupData(btn) {
+    var json = JSON.stringify({ shukan: 1, days: state.days, dt: state.dt, t: state.t });
+    try { navigator.clipboard.writeText(json).then(function () { flash(btn, 'הועתק ✓'); }, function () { flash(btn, 'ההעתקה נכשלה'); }); }
+    catch (e) { flash(btn, 'ההעתקה נכשלה'); }
+  }
+  function restoreData(btn) {
+    function apply(txt) {
+      try {
+        var d = JSON.parse(txt);
+        if (!d || typeof d.days !== 'object' || d.days === null) throw 0;
+        var m = merge({ days: state.days, dt: state.dt }, { days: d.days, dt: d.dt && typeof d.dt === 'object' ? d.dt : {} });
+        state.days = m.days; state.dt = m.dt; state.t = Math.max(state.t, Number(d.t) || 0);
+        cacheLocal(); render();
+        var nb = document.querySelector('button[data-bk="import"]'); if (nb) flash(nb, 'שוחזר ✓');
+      } catch (e) { flash(btn, 'אין גיבוי בלוח'); }
+    }
+    try { navigator.clipboard.readText().then(apply, function () { flash(btn, 'אין גישה ללוח'); }); }
+    catch (e) { flash(btn, 'אין גישה ללוח'); }
   }
   document.getElementById('app').addEventListener('click', function (e) {
     var bk = e.target.closest ? e.target.closest('button[data-bk]') : null;
-    if (bk) { if (bk.getAttribute('data-bk') === 'export') backupData(); else restoreData(); return; }
+    if (bk) { if (bk.getAttribute('data-bk') === 'export') backupData(bk); else restoreData(bk); return; }
     var m = e.target.closest ? e.target.closest('button[data-mk]') : null;
     if (m) {   // a day in the month view opens its week
       if (m.disabled) return;

@@ -186,8 +186,10 @@ body { overflow-x: clip; }
 .tabs button i { width: 7px; height: 7px; border-radius: 50%; background: #B9AE97; display: block; transition: background .25s ease; }
 .tabs button.on i { background: var(--accent); }
 .weekbar { position: relative; }
-.addb { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 36px; display: grid; place-items: center; color: var(--accent); border-radius: 50%; }
-.addb svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; }
+.addb { position: absolute; inset-inline-end: -12px; top: 50%; transform: translateY(-50%); z-index: 2; width: 44px; height: 32px; display: grid; place-items: center; color: var(--muted); border-radius: 50%; transition: color .2s ease; }
+.addb:active { color: var(--accent); }
+@media (hover: hover) { .addb:hover { color: var(--accent); } }
+.addb svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }
 
 /* no habits yet */
 .empty { margin: auto; padding: 24px 16px; text-align: center; }
@@ -232,11 +234,11 @@ body { overflow-x: clip; }
 
 <div class="wrap" dir="rtl" lang="he">
   <div class="top">
-    <div class="titlebar"><div class="tabs" id="tabs" role="tablist"><button type="button" role="tab" data-v="week" aria-label="שבוע"><i></i></button><button type="button" role="tab" data-v="month" aria-label="חודש"><i></i></button><button type="button" role="tab" data-v="tree" aria-label="עץ"><i></i></button></div><span id="sync" class="sync" hidden>לא נשמר, מנסה שוב</span></div>
+    <div class="titlebar"><div class="tabs" id="tabs" role="tablist"><button type="button" role="tab" data-v="week" aria-label="שבוע"><i></i></button><button type="button" role="tab" data-v="month" aria-label="חודש"><i></i></button><button type="button" role="tab" data-v="tree" aria-label="עץ"><i></i></button></div><span id="sync" class="sync" hidden>לא נשמר, מנסה שוב</span><button type="button" id="addbtn" class="addb" aria-label="הרגלים"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
     <div class="weekbar">
       <button id="prev" class="nb" aria-label="שבוע קודם"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
       <button type="button" class="range" id="rangebtn" tabindex="-1" style="cursor:default"><b id="range"></b></button>
-      <button id="next" class="nb" aria-label="שבוע הבא"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" id="addbtn" class="addb" aria-label="הרגלים"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button id="next" class="nb" aria-label="שבוע הבא"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
     </div>
   </div>
   <div id="pages">
@@ -671,7 +673,7 @@ body { overflow-x: clip; }
     setDays(ti);
 
     var hs = visible().filter(function (hb) { return habitStart(hb).getTime() <= ws.getTime(); });
-    var html = hs.length ? '' : emptyHtml();
+    var html = hs.length || awaiting ? '' : emptyHtml();
     hs.forEach(function (hb, hi) {
       var cnt = weekCount(hb.id, ws), nm = esc(hb.name), nx = hs[hi + 1], from = habitStart(hb).getTime();
       var goal = goalFor(hb, ws), met = cnt >= goal;
@@ -1213,13 +1215,16 @@ body { overflow-x: clip; }
   } else {
     cacheLocal();   // first start of this version: a clean slate, with no habits
   }
+  var awaiting = false;   // nothing local yet, but a shared copy may be on its way: show no empty-state message until it answers
+  function releaseWait() { if (awaiting) { awaiting = false; render(); } }
+  if (!state.habits.length && window.claude && window.claude.use) { awaiting = true; setTimeout(releaseWait, 1500); }
   render();
   measureScene();
 
   function connect() {
     if (!window.claude || !window.claude.use) return;
     window.claude.use('db').then(function (db) {
-      if (!db) return;
+      if (!db) { releaseWait(); return; }
       dbRef = db.doc('tracker/log');
       dbRef.onSnapshot(function (snap) {
         if (timer || saving) return;
@@ -1231,8 +1236,9 @@ body { overflow-x: clip; }
         var m = merge(state, remote), mc = canon(m);
         if (mc !== canon(state)) { state.days = m.days; state.dt = m.dt; state.habits = m.habits; state.t = Math.max(state.t, Number(data && data.t) || 0); cacheLocal(); render(); }
         if (mc !== canon(remote) || legacy) flush();   // this device has something the shared copy lacks
+        releaseWait();
       }, function () {});
-    }).catch(function () {});
+    }).catch(releaseWait);
   }
   connect();
 

@@ -1,2 +1,0 @@
-# shukan
-Weekly habit tracker
